@@ -6,8 +6,7 @@ from collections.abc import Generator
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import Engine, create_engine
-from sqlalchemy.engine import make_url
+from sqlalchemy import Connection, Engine, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -30,15 +29,13 @@ def build_connect_args(settings: Settings) -> dict[str, Any]:
     if not database_url.startswith("postgresql"):
         return {}
 
-    options = make_url(database_url).query.get("options", "")
-    if isinstance(options, tuple):
-        options = " ".join(options)
-    statement_option = f"-c statement_timeout={settings.db_statement_timeout_ms}"
-    combined_options = f"{options} {statement_option}".strip()
-    return {
-        "connect_timeout": settings.db_connect_timeout,
-        "options": combined_options,
-    }
+    return {"connect_timeout": settings.db_connect_timeout}
+
+
+def apply_statement_timeout(connection: Connection, timeout_ms: int) -> None:
+    """Bound each PostgreSQL transaction without pooler-incompatible startup options."""
+
+    connection.exec_driver_sql(f"SET LOCAL statement_timeout = {timeout_ms}")
 
 
 def build_engine(settings: Settings) -> Engine:
@@ -61,7 +58,15 @@ def build_engine(settings: Settings) -> Engine:
             pool_timeout=settings.db_pool_timeout,
             pool_recycle=settings.db_pool_recycle,
         )
-    return create_engine(database_url, **common)
+    engine = create_engine(database_url, **common)
+    if database_url.startswith("postgresql"):
+        timeout_ms = settings.db_statement_timeout_ms
+
+        def set_transaction_timeout(connection: Connection) -> None:
+            apply_statement_timeout(connection, timeout_ms)
+
+        event.listen(engine, "begin", set_transaction_timeout)
+    return engine
 
 
 def build_session_factory(engine: Engine) -> SessionFactory:
