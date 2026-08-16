@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Zero Cloud Stack">
+  <defs>
+    <linearGradient id="g" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8b7cff"/>
+      <stop offset="1" stop-color="#54e2c1"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="17" fill="#0b1020"/>
+  <path d="M18 41.5h29.5a8.5 8.5 0 0 0 .8-17A14.5 14.5 0 0 0 21 23.1a9.3 9.3 0 0 0-3 18.4Z" fill="none" stroke="url(#g)" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="m25 32 6 6 10-12" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

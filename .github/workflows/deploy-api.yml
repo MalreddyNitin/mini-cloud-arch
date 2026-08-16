@@ -1,0 +1,148 @@
+name: Deploy API
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production-api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Cloud Run production
+    if: >-
+      vars.ENABLE_PRODUCTION_DEPLOY == 'true' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == github.event.repository.default_branch &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: production
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      GCP_ARTIFACT_REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY }}
+      CLOUD_RUN_SERVICE_NAME: ${{ vars.CLOUD_RUN_SERVICE_NAME }}
+      CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT: ${{ vars.CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT }}
+      CLOUD_RUN_PUBLIC_API: ${{ vars.CLOUD_RUN_PUBLIC_API }}
+      APP_ORIGIN: ${{ vars.APP_ORIGIN }}
+      R2_ENDPOINT_URL: ${{ vars.R2_ENDPOINT_URL }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      DATABASE_URL_SECRET: ${{ vars.DATABASE_URL_SECRET }}
+      DATABASE_URL_DIRECT_SECRET: ${{ vars.DATABASE_URL_DIRECT_SECRET }}
+      R2_ACCESS_KEY_ID_SECRET: ${{ vars.R2_ACCESS_KEY_ID_SECRET }}
+      R2_SECRET_ACCESS_KEY_SECRET: ${{ vars.R2_SECRET_ACCESS_KEY_SECRET }}
+      PRODUCTION_MIGRATION_REVISION: ${{ vars.PRODUCTION_MIGRATION_REVISION }}
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - name: Validate non-secret deployment variables
+        env:
+          WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+        run: |
+          required=(GCP_PROJECT_ID GCP_REGION GCP_ARTIFACT_REPOSITORY CLOUD_RUN_SERVICE_NAME CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT APP_ORIGIN R2_ENDPOINT_URL R2_BUCKET DATABASE_URL_SECRET DATABASE_URL_DIRECT_SECRET R2_ACCESS_KEY_ID_SECRET R2_SECRET_ACCESS_KEY_SECRET PRODUCTION_MIGRATION_REVISION WIF_PROVIDER DEPLOY_SERVICE_ACCOUNT)
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required repository/environment variable: $name" >&2
+              exit 1
+            fi
+          done
+          if [[ "$WIF_PROVIDER" != projects/*/locations/global/workloadIdentityPools/*/providers/* ]]; then
+            echo 'GCP_WORKLOAD_IDENTITY_PROVIDER is not a full provider resource name.' >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+      - name: Enforce production migration gate
+        run: >-
+          python3 scripts/migration_gate.py
+          --expected "$PRODUCTION_MIGRATION_REVISION"
+      - id: auth
+        name: Authenticate with short-lived GitHub OIDC credentials
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          version: ">= 546.0.0"
+      - name: Verify the actual Neon migration revision (read-only)
+        run: |
+          if [[ ! "$DATABASE_URL_DIRECT_SECRET" =~ ^[A-Za-z][A-Za-z0-9_-]{0,254}:[1-9][0-9]*$ ]]; then
+            echo 'DATABASE_URL_DIRECT_SECRET must be NAME:NUMERIC_VERSION.' >&2
+            exit 1
+          fi
+          command -v psql >/dev/null 2>&1 || {
+            echo 'The runner does not provide psql; refusing to skip the production schema gate.' >&2
+            exit 1
+          }
+          secret_name="${DATABASE_URL_DIRECT_SECRET%:*}"
+          secret_version="${DATABASE_URL_DIRECT_SECRET##*:}"
+          database_url_direct="$(gcloud secrets versions access "$secret_version" \
+            --secret "$secret_name" --project "$GCP_PROJECT_ID")"
+          echo "::add-mask::$database_url_direct"
+          DATABASE_URL_DIRECT="$database_url_direct" \
+            ./scripts/verify-production-migration.sh \
+            --expected "$PRODUCTION_MIGRATION_REVISION"
+          unset database_url_direct
+      - name: Configure Artifact Registry authentication
+        run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+      - name: Build deployment candidate
+        env:
+          IMAGE_TAG: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GCP_ARTIFACT_REPOSITORY }}/${{ env.CLOUD_RUN_SERVICE_NAME }}:${{ env.SOURCE_SHA }}
+        run: |
+          docker build --tag "$IMAGE_TAG" apps/api
+          echo "IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
+      - name: Scan exact deployment candidate
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_TAG }}
+          version: v0.70.0
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+      - name: Push scanned image and pin its registry digest
+        run: |
+          docker push "$IMAGE_TAG"
+          image_uri="$(docker image inspect "$IMAGE_TAG" --format '{{index .RepoDigests 0}}')"
+          expected_repository="${IMAGE_TAG%:*}"
+          if [[ ! "$image_uri" =~ ^${expected_repository}@sha256:[0-9a-f]{64}$ ]]; then
+            echo 'Unable to resolve the pushed image to the expected immutable digest.' >&2
+            exit 1
+          fi
+          echo "IMAGE_URI=$image_uri" >> "$GITHUB_ENV"
+      - name: Stage, smoke test, and promote with fixed cost-safe settings
+        run: |
+          args=(
+            --apply
+            --image "$IMAGE_URI"
+            --project-id "$GCP_PROJECT_ID"
+            --region "$GCP_REGION"
+            --service "$CLOUD_RUN_SERVICE_NAME"
+            --candidate-tag "candidate-${SOURCE_SHA:0:12}"
+            --runtime-sa "$CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT"
+            --app-origin "$APP_ORIGIN"
+            --r2-endpoint "$R2_ENDPOINT_URL"
+            --r2-bucket "$R2_BUCKET"
+            --secret "DATABASE_URL=$DATABASE_URL_SECRET"
+            --secret "R2_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID_SECRET"
+            --secret "R2_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY_SECRET"
+          )
+          if [[ "${CLOUD_RUN_PUBLIC_API:-false}" == true ]]; then
+            args+=(--public)
+          fi
+          ./infra/gcp/deploy-cloud-run.sh "${args[@]}"

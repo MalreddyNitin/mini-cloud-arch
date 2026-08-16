@@ -1,0 +1,62 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.local
+secrets/
+secret.*
+*.secret
+*service-account*.json
+*service_account*.json
+credentials.json
+gha-creds-*.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Database exports and local data
+backups/
+*.dump
+*.dump.gz
+*.sql
+*.sql.gz
+*.sqlite
+*.sqlite3
+*.db
+postgres-data/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Node / Vite
+node_modules/
+apps/web/dist/
+coverage/
+.vite/
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Tool state
+.terraform/
+*.tfstate
+*.tfstate.*
+.wrangler/
+.dev.vars

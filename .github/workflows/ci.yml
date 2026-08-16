@@ -1,0 +1,188 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: zero_cloud_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d zero_cloud_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      APP_ENV: test
+      APP_ORIGIN: http://localhost:5173
+      CORS_ORIGINS: http://localhost:5173
+      ENABLE_WRITES: "true"
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/zero_cloud_test
+      DATABASE_URL_DIRECT: postgresql+psycopg://postgres:postgres@localhost:5432/zero_cloud_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/api/requirements-dev.lock
+      - name: Install locked dependencies
+        working-directory: apps/api
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.lock
+      - name: Validate installed dependency graph
+        run: python -m pip check
+      - name: Lint
+        working-directory: apps/api
+        run: python -m ruff check app tests migrations
+      - name: Type-check
+        working-directory: apps/api
+        run: python -m mypy app
+      - name: Apply migrations to PostgreSQL
+        working-directory: apps/api
+        run: python -m alembic upgrade head
+      - name: Check model/migration drift
+        working-directory: apps/api
+        run: python -m alembic check
+      - name: Test
+        working-directory: apps/api
+        run: python -m pytest --strict-markers
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install locked dependencies
+        working-directory: apps/web
+        run: npm ci
+      - name: Audit production dependencies
+        working-directory: apps/web
+        run: npm audit --omit=dev --audit-level=high
+      - name: Lint
+        working-directory: apps/web
+        run: npm run lint
+      - name: Type-check
+        working-directory: apps/web
+        run: npm run typecheck
+      - name: Test
+        working-directory: apps/web
+        run: npm test -- --run
+      - name: Production build
+        working-directory: apps/web
+        env:
+          VITE_API_BASE_URL: https://api.example.invalid
+        run: npm run build
+
+  policy:
+    name: Repository policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Validate shell scripts
+        run: |
+          while IFS= read -r -d '' script; do
+            bash -n "$script"
+          done < <(find scripts infra -type f -name '*.sh' -print0)
+      - name: Test operational policy helpers
+        run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+      - name: Validate cost guardrails and secret policy
+        run: ./scripts/check-free-tier.sh --static
+      - name: Validate Compose model
+        run: docker compose config --quiet
+
+  container:
+    name: Container
+    needs: backend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: zero_cloud_container
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d zero_cloud_container"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/zero_cloud_container
+      DATABASE_URL_DIRECT: postgresql+psycopg://postgres:postgres@localhost:5432/zero_cloud_container
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/api/requirements-dev.lock
+      - name: Prepare schema
+        working-directory: apps/api
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.lock
+          python -m alembic upgrade head
+      - name: Build image
+        run: docker build --tag zero-cloud-api:${{ github.sha }} apps/api
+      - name: Assert non-root image metadata
+        run: |
+          image_user="$(docker image inspect zero-cloud-api:${{ github.sha }} --format '{{.Config.User}}')"
+          test -n "$image_user"
+          test "$image_user" != root
+          test "$image_user" != 0
+      - name: Container health smoke test
+        run: |
+          container_id="$(docker run --detach --network host \
+            -e APP_ENV=test \
+            -e PORT=18080 \
+            -e DATABASE_URL="$DATABASE_URL" \
+            -e DATABASE_URL_DIRECT="$DATABASE_URL_DIRECT" \
+            zero-cloud-api:${{ github.sha }})"
+          trap 'docker logs "$container_id"; docker rm --force "$container_id" >/dev/null' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:18080/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+      - name: Scan final image for fixed high/critical vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: zero-cloud-api:${{ github.sha }}
+          version: v0.70.0
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL

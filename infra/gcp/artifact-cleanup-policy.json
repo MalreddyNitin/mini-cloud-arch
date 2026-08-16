@@ -1,0 +1,17 @@
+[
+  {
+    "name": "delete-versions-older-than-14-days",
+    "action": {"type": "Delete"},
+    "condition": {
+      "tagState": "any",
+      "olderThan": "14d"
+    }
+  },
+  {
+    "name": "keep-three-most-recent",
+    "action": {"type": "Keep"},
+    "mostRecentVersions": {
+      "keepCount": 3
+    }
+  }
+]
