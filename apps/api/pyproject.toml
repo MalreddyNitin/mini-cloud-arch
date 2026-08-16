@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Production-shaped FastAPI backend for the Zero Cloud Stack"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-  "alembic==1.18.5",
+  "alembic==1.19.1",
   "boto3==1.35.99",
   "fastapi==0.141.1",
   "psycopg[binary]==3.2.10",
