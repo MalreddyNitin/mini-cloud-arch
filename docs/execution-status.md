@@ -5,7 +5,7 @@ as_of: 2026-08-15
 source_plan: plan.md
 hosted_state: GitHub repository and CI active; application providers not provisioned
 production_usage: not measured
-repository_publication: main published at 65396aace1156113d476c8738554314119ed6b7e
+repository_publication: protected main published at 6961c7c2e6223bb02063af724f76d30a922cee84
 ```
 
 This record distinguishes repository implementation from provider-side proof.
@@ -26,7 +26,7 @@ the stack is not production-complete and the Definition of Done is not met.
 
 | Sprint | Status | Evidence and remaining gate |
 |---|---|---|
-| 0 — $0 contract | **Partly proven; blocked externally** | The public GitHub repository exists, `plan.md` and dated free-tier limits are published, `us-central1` is selected, and secret scanning/push protection are enabled. `main` requires pull requests and the four CI checks; force-push and deletion are disabled. GitHub MFA could not be read with the available token, and Cloudflare/Google/Neon accounts, projects, billing, MFA, and the $1 budget remain unverified. |
+| 0 — $0 contract | **Complete; provider identity evidence operator-attested** | The public GitHub repository exists, `plan.md` and dated free-tier limits are published, `us-central1` is selected, and secret scanning/push protection are enabled. `main` requires pull requests and the four CI checks; force-push and deletion are disabled. On 2026-08-15, the operator attested that GitHub MFA, Google 2SV, Cloudflare MFA, and Neon MFA are enabled, the Cloudflare email is verified, and `mini-cloud-arch` is the dedicated GCP project ID. No application service was provisioned from this execution environment. Billing and the `$1` budget belong to Sprint 5. |
 | 1 — Local vertical slice | **Proven locally** | FastAPI, React, PostgreSQL, Alembic, mocked S3/R2, CRUD, direct-upload UI, Compose, unit/integration tests, and no-cloud local paths were exercised. |
 | 2 — Neon | **Implemented, not live-verified** | Pooled/direct URL separation, required production TLS, bounded pool/connect/query timeouts, migrations, cleanup, and usage instructions exist. No Neon project, migration run, CRUD smoke, connection observation, or usage review has been performed. |
 | 3 — R2 | **Implemented, not live-verified** | Private Standard-bucket bootstrap, exact-origin CORS, scoped-key instructions, generated keys, signed exact upload length, type/size bounds, short PUT/GET URLs, direct-transfer smoke, and cleanup exist. No subscription, bucket, token, object transfer, privacy check, or usage review has been performed. |
@@ -40,7 +40,7 @@ the stack is not production-complete and the Definition of Done is not met.
 | 11 — $0 guardrails | **Proven locally; live controls blocked** | Static/live checks cover Cloud Run drift, account-wide R2 usage, Neon usage, bounded inputs, budgets, and stop procedures. The budget and provider dashboards have not been created or inspected. |
 | 12 — Observability | **Proven locally; hosted metrics blocked** | Structured JSON request logs use route templates and omit dynamic object keys; raw Uvicorn access logs are disabled. Smoke tooling covers web, process, DB, direct R2 transfer, and cleanup. Cloud Run/Neon/R2 metrics and production logs remain uninspected. |
 | 13 — Recovery | **Implemented; exit not met** | Alembic, validated logical dump tooling, bounded retention, reconstruction, and data-loss limitations are documented. No restore into a disposable Neon target and no live R2 backup verification have been recorded. |
-| 14 — Security | **Repository/application controls proven; provider controls blocked** | Read-only defaults, write protection, CORS, headers, validation, ORM queries, upload/key bounds, short URLs, private-bucket automation, least-privilege/WIF design, Dependabot, and scanning exist. GitHub secret scanning, push protection, Dependabot security updates, and protected `main` are live. Provider MFA, real R2 token scope/privacy, and Google IAM still require operator verification. |
+| 14 — Security | **Repository/application controls proven; provider authorization blocked** | Read-only defaults, write protection, CORS, headers, validation, ORM queries, upload/key bounds, short URLs, private-bucket automation, least-privilege/WIF design, Dependabot, and scanning exist. GitHub secret scanning, push protection, Dependabot security updates, and protected `main` are live. Provider MFA is operator-attested; real R2 token scope/privacy and Google IAM still require live verification. |
 | 15 — Performance | **Local baseline proven; live acceptance blocked** | Pagination, compact queries, small DB pool, timeouts, direct object flow, response compression, and a bounded load tool exist. The recorded loopback baseline is 50 requests at concurrency 2, 0 errors, and p95 24.6 ms. Production quota headroom and usage remain unmeasured. |
 
 ## Local verification record
@@ -95,11 +95,10 @@ Repository publication, hosted CI, and the available GitHub repository controls
 are complete. Continue in this order without declaring production completion
 early:
 
-1. Verify MFA across GitHub, Cloudflare, Google Cloud, and Neon; obtain
-   authenticated provider access. GitHub environment protection remains tied to
-   the future production deployment setup.
-2. Provision Neon and R2, apply the migration, run CRUD/direct-object smoke, and
-   inspect initial usage.
+1. Obtain authenticated Neon access, provision the Sprint 2 project/database,
+   apply the migration, run CRUD smoke, and inspect initial usage.
+2. Provision R2, run the direct-object smoke, verify privacy, and inspect
+   initial usage.
 3. Bootstrap GCP/WIF/budget/secrets, deploy Cloud Run, prove cold start and
    scale-to-zero, and inspect metrics/billing.
 4. Connect Pages, configure the production API origin, and verify route refresh
