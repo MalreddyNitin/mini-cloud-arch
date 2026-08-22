@@ -115,6 +115,11 @@ explicitly supplied. See `--help` on every script before using provider access.
 
 Deployment is an operator-controlled sequence, not a one-click claim:
 
+> Current state (2026-08-22): provider resources were torn down at the Sprint 5
+> rollback boundary to honor a literal-zero policy. GCP billing is unlinked and
+> project deletion is pending, the R2 bucket is deleted, and the disposable Neon
+> project is deleted. Keep both GitHub deployment fuses in their safe state.
+
 1. Secure accounts and re-check the current cost contract.
 2. Provision Neon, review/apply migrations once, and record the verified head in
    the protected production migration marker.
@@ -124,10 +129,14 @@ Deployment is an operator-controlled sequence, not a one-click claim:
    GitHub variables.
 6. Protect the GitHub `production` environment and keep
    `ENABLE_PRODUCTION_DEPLOY` unset until every provider variable, pinned secret,
-   and migration gate is ready.
-7. Set `ENABLE_PRODUCTION_DEPLOY=true`, deploy the API, verify scale-to-zero and
-   usage, then connect Pages via its
-   native Git integration.
+   and migration gate is ready. Keep `STRICT_ZERO_COST=true` when the operator
+   requires a literal no-charge posture.
+7. A literal no-charge posture cannot safely deploy the complete usage-billed
+   architecture because provider meters, alerts, and spend caps are delayed.
+   Only after explicitly accepting that residual risk, set
+   `STRICT_ZERO_COST=false` and `ENABLE_PRODUCTION_DEPLOY=true`; then deploy the
+   API, verify scale-to-zero and usage, and connect Pages via its native Git
+   integration.
 
 Exact commands, roles, variables, and verification gates are in
 [`docs/deployment.md`](docs/deployment.md). Cloudflare Pages settings are in

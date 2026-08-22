@@ -154,6 +154,7 @@ Set the repository/environment variables printed by `bootstrap.sh`:
 | Variable | Example/meaning |
 |---|---|
 | `ENABLE_PRODUCTION_DEPLOY` | Keep unset/`false` until every provider resource, protected variable, pinned secret version, migration, and environment review is complete; then set exactly `true` |
+| `STRICT_ZERO_COST` | Set `true` to block production deployment. Set exactly `false` only after the operator explicitly accepts that usage-based providers cannot guarantee a literal zero-dollar maximum. |
 | `GCP_PROJECT_ID` | Dedicated project ID |
 | `GCP_REGION` | `us-central1` |
 | `GCP_ARTIFACT_REPOSITORY` | `zero-cloud` |
@@ -181,6 +182,13 @@ the production-environment review. The deploy workflow then runs only after a
 successful `push` CI run on this repository's default branch (not a fork or PR)
 and checks out the exact trusted/tested SHA. It has no manual-dispatch path that
 can bypass CI lineage.
+
+When the operator requires a literal zero-dollar maximum, also set
+`STRICT_ZERO_COST=true`. The workflow requires it to be exactly `false`, so the
+production job stays skipped even if the ordinary deploy opt-in is changed.
+Provider usage and cost signals can be delayed, so set it to `false` only after
+an explicit residual-cost-risk decision; the complete live architecture cannot
+guarantee that a payment method is never charged.
 
 ## 8. Migrate, deploy, and verify
 

@@ -1,8 +1,8 @@
 ---
 last_verified: 2026-08-15
 verification_scope: official provider pricing and limit pages
-deployment_status: not provisioned
-last_measured_usage: not measured
+deployment_status: provider resources torn down; production not deployed
+last_measured_usage: "2026-08-22: GCP billing unlinked/project deletion requested; R2 bucket deleted; Neon project deleted"
 ---
 
 # Cost guardrails
@@ -11,6 +11,34 @@ This stack targets a $0 monthly bill; it does not promise one. Free allowances
 can change, usage can cross them, and both Google Cloud and R2 require billing
 or subscription setup. Re-run the source review and live usage checks before
 provisioning and at least monthly thereafter.
+
+## Strict-zero deployment fuse
+
+Set the GitHub repository variable `STRICT_ZERO_COST=true` when the operator
+requires a literal zero-dollar maximum. The production workflow requires that
+variable to be exactly `false` as well as `ENABLE_PRODUCTION_DEPLOY=true`, so
+strict-zero mode prevents image pushes and Cloud Run deployment.
+
+This fuse is intentionally conservative. Google documents that alerts,
+programmatic billing shutdown, and Cloud Run spend-cap enforcement can be
+delayed and that overages remain billable. Cloudflare R2 has no hard free-tier
+spending cap. Therefore the complete live architecture cannot guarantee that a
+card is never charged. Under a literal-zero policy, keep the deploy fuse on and
+accept that the production Definition of Done remains paused.
+
+On 2026-08-22, the operator selected teardown rather than accept residual
+usage-billing risk. Before teardown, `mini-cloud-arch` had no Cloud Run service,
+container image, or Secret Manager secret, and `mini-cloud-arch-prod` contained
+zero objects and zero bytes. Both Google budgets were deleted, billing was
+unlinked, and GCP project deletion was requested. The empty R2 bucket and the
+disposable Neon project were deleted. The R2 subscription and bucket-scoped
+token still require cancellation/revocation in the Cloudflare dashboard; do not
+re-provision while the literal-zero policy remains in force.
+
+The production Definition of Done is therefore intentionally paused at the
+Sprint 5 rollback boundary. Source code and CI remain in GitHub, with
+`STRICT_ZERO_COST=true` and `ENABLE_PRODUCTION_DEPLOY=false` as independent
+deployment fuses.
 
 ## Verified operating envelope
 
@@ -66,6 +94,7 @@ All links below were read on `2026-08-15`; provider pages showed updates in
 | Secret Manager versions/operations | [Secret Manager pricing](https://cloud.google.com/secret-manager/pricing) |
 | Neon Free CU-hours/storage | [Neon pricing](https://neon.com/pricing) |
 | Google alert-budget behavior | [Cloud Billing budgets](https://docs.cloud.google.com/billing/docs/how-to/budgets) |
+| Google automated shutdown/spend-cap delay and overage limitations | [Disable billing with notifications](https://docs.cloud.google.com/billing/docs/how-to/disable-billing-with-notifications) and [spend-cap budgets](https://docs.cloud.google.com/billing/docs/how-to/budgets-spend-caps) |
 
 ## Controls that actually constrain usage
 
@@ -152,3 +181,21 @@ load test and monthly while production is active.
 5. If charges continue, an authorized billing administrator can unlink billing,
    accepting that Google services stop and resources may eventually be lost.
    Budgets alone do not do this.
+
+## Teardown record
+
+The strict-zero teardown performed on 2026-08-22 used these exact targets:
+
+- GCP project `mini-cloud-arch` (`850158642797`): both project budgets deleted,
+  billing unlinked, and lifecycle changed to `DELETE_REQUESTED`.
+- Cloudflare R2 bucket `mini-cloud-arch-prod`: verified at zero objects and zero
+  bytes, then deleted. The remaining account-level token revocation and R2
+  subscription cancellation are dashboard actions.
+- Neon project `dark-band-67190559`: deleted; the organization active-project
+  list returned empty afterward.
+- Local ignored `.env`: deleted so R2 credentials no longer remain in the
+  workspace.
+
+Do not undelete the GCP project, recreate the provider resources, or disable the
+GitHub strict-zero fuse without a new explicit decision accepting the providers'
+nonzero residual billing risk.
