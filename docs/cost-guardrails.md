@@ -1,8 +1,8 @@
 ---
 last_verified: 2026-08-15
 verification_scope: official provider pricing and limit pages
-deployment_status: not provisioned
-last_measured_usage: not measured
+deployment_status: provider foundations provisioned; Cloud Run not deployed
+last_measured_usage: "2026-08-22: no Cloud Run service/image/secret; R2 0 B and 0 objects"
 ---
 
 # Cost guardrails
@@ -11,6 +11,26 @@ This stack targets a $0 monthly bill; it does not promise one. Free allowances
 can change, usage can cross them, and both Google Cloud and R2 require billing
 or subscription setup. Re-run the source review and live usage checks before
 provisioning and at least monthly thereafter.
+
+## Strict-zero deployment fuse
+
+Set the GitHub repository variable `STRICT_ZERO_COST=true` when the operator
+requires a literal zero-dollar maximum. The production workflow requires that
+variable to be exactly `false` as well as `ENABLE_PRODUCTION_DEPLOY=true`, so
+strict-zero mode prevents image pushes and Cloud Run deployment.
+
+This fuse is intentionally conservative. Google documents that alerts,
+programmatic billing shutdown, and Cloud Run spend-cap enforcement can be
+delayed and that overages remain billable. Cloudflare R2 has no hard free-tier
+spending cap. Therefore the complete live architecture cannot guarantee that a
+card is never charged. Under a literal-zero policy, keep the deploy fuse on and
+accept that the production Definition of Done remains paused.
+
+As of 2026-08-22, `mini-cloud-arch` has no Cloud Run service, container image,
+or Secret Manager secret; `mini-cloud-arch-prod` is private and contains zero
+objects and zero bytes. In addition to the original USD 1 budget, an early
+warning budget alerts on any reported current spend and forecasted spend above
+USD 0.01. These are detection controls, not hard stops.
 
 ## Verified operating envelope
 
@@ -66,6 +86,7 @@ All links below were read on `2026-08-15`; provider pages showed updates in
 | Secret Manager versions/operations | [Secret Manager pricing](https://cloud.google.com/secret-manager/pricing) |
 | Neon Free CU-hours/storage | [Neon pricing](https://neon.com/pricing) |
 | Google alert-budget behavior | [Cloud Billing budgets](https://docs.cloud.google.com/billing/docs/how-to/budgets) |
+| Google automated shutdown/spend-cap delay and overage limitations | [Disable billing with notifications](https://docs.cloud.google.com/billing/docs/how-to/disable-billing-with-notifications) and [spend-cap budgets](https://docs.cloud.google.com/billing/docs/how-to/budgets-spend-caps) |
 
 ## Controls that actually constrain usage
 

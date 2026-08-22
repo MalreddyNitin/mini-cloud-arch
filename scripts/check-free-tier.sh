@@ -116,6 +116,7 @@ if [[ "$do_static" == true ]]; then
   require_literal .github/workflows/deploy-api.yml 'verify-production-migration.sh' 'Production deploys query the actual database revision read-only'
   require_literal .github/workflows/deploy-api.yml 'head_repository.full_name == github.repository' 'Privileged workflow_run deploys require the trusted repository'
   require_literal .github/workflows/deploy-api.yml "vars.ENABLE_PRODUCTION_DEPLOY == 'true'" 'Production deployment is opt-in until provider configuration is complete'
+  require_literal .github/workflows/deploy-api.yml "vars.STRICT_ZERO_COST == 'false'" 'Strict-zero mode blocks production deployment until cost risk is explicitly accepted'
   forbid_literal .github/workflows/deploy-api.yml 'workflow_dispatch' 'Production deployment cannot bypass successful CI lineage'
   require_literal .github/workflows/deploy-api.yml 'Scan exact deployment candidate' 'The exact CD-built image is vulnerability scanned'
   require_literal scripts/check-free-tier.sh '10000000000' 'R2 storage guardrail uses the decimal 10 GB allowance'
