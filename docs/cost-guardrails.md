@@ -1,8 +1,8 @@
 ---
 last_verified: 2026-08-15
 verification_scope: official provider pricing and limit pages
-deployment_status: provider foundations provisioned; Cloud Run not deployed
-last_measured_usage: "2026-08-22: no Cloud Run service/image/secret; R2 0 B and 0 objects"
+deployment_status: provider resources torn down; production not deployed
+last_measured_usage: "2026-08-22: GCP billing unlinked/project deletion requested; R2 bucket deleted; Neon project deleted"
 ---
 
 # Cost guardrails
@@ -26,11 +26,19 @@ spending cap. Therefore the complete live architecture cannot guarantee that a
 card is never charged. Under a literal-zero policy, keep the deploy fuse on and
 accept that the production Definition of Done remains paused.
 
-As of 2026-08-22, `mini-cloud-arch` has no Cloud Run service, container image,
-or Secret Manager secret; `mini-cloud-arch-prod` is private and contains zero
-objects and zero bytes. In addition to the original USD 1 budget, an early
-warning budget alerts on any reported current spend and forecasted spend above
-USD 0.01. These are detection controls, not hard stops.
+On 2026-08-22, the operator selected teardown rather than accept residual
+usage-billing risk. Before teardown, `mini-cloud-arch` had no Cloud Run service,
+container image, or Secret Manager secret, and `mini-cloud-arch-prod` contained
+zero objects and zero bytes. Both Google budgets were deleted, billing was
+unlinked, and GCP project deletion was requested. The empty R2 bucket and the
+disposable Neon project were deleted. The R2 subscription and bucket-scoped
+token still require cancellation/revocation in the Cloudflare dashboard; do not
+re-provision while the literal-zero policy remains in force.
+
+The production Definition of Done is therefore intentionally paused at the
+Sprint 5 rollback boundary. Source code and CI remain in GitHub, with
+`STRICT_ZERO_COST=true` and `ENABLE_PRODUCTION_DEPLOY=false` as independent
+deployment fuses.
 
 ## Verified operating envelope
 
@@ -173,3 +181,21 @@ load test and monthly while production is active.
 5. If charges continue, an authorized billing administrator can unlink billing,
    accepting that Google services stop and resources may eventually be lost.
    Budgets alone do not do this.
+
+## Teardown record
+
+The strict-zero teardown performed on 2026-08-22 used these exact targets:
+
+- GCP project `mini-cloud-arch` (`850158642797`): both project budgets deleted,
+  billing unlinked, and lifecycle changed to `DELETE_REQUESTED`.
+- Cloudflare R2 bucket `mini-cloud-arch-prod`: verified at zero objects and zero
+  bytes, then deleted. The remaining account-level token revocation and R2
+  subscription cancellation are dashboard actions.
+- Neon project `dark-band-67190559`: deleted; the organization active-project
+  list returned empty afterward.
+- Local ignored `.env`: deleted so R2 credentials no longer remain in the
+  workspace.
+
+Do not undelete the GCP project, recreate the provider resources, or disable the
+GitHub strict-zero fuse without a new explicit decision accepting the providers'
+nonzero residual billing risk.

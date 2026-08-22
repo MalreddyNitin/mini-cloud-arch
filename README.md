@@ -115,6 +115,11 @@ explicitly supplied. See `--help` on every script before using provider access.
 
 Deployment is an operator-controlled sequence, not a one-click claim:
 
+> Current state (2026-08-22): provider resources were torn down at the Sprint 5
+> rollback boundary to honor a literal-zero policy. GCP billing is unlinked and
+> project deletion is pending, the R2 bucket is deleted, and the disposable Neon
+> project is deleted. Keep both GitHub deployment fuses in their safe state.
+
 1. Secure accounts and re-check the current cost contract.
 2. Provision Neon, review/apply migrations once, and record the verified head in
    the protected production migration marker.
